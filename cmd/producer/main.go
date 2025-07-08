@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -12,17 +11,9 @@ func main() {
 	producer := NewKafkaProducer()
 	PublishMessage("Hello Kafka", "test-topic", producer, []byte("key1"), deliveryChan)
 
-	event := <-deliveryChan
-	msg := event.(*kafka.Message)
-	if msg.TopicPartition.Error != nil {
-		fmt.Printf("Failed to deliver message: %v\n", msg.TopicPartition.Error)
-	} else {
-		fmt.Printf("Message delivered to %s [%d] at offset %d\n",
-			*msg.TopicPartition.Topic,
-			msg.TopicPartition.Partition,
-			msg.TopicPartition.Offset)
-	}
-	close(deliveryChan)
+	go DeliveryReport(deliveryChan)
+
+	producer.Flush(1000) // Wait for messages to be delivered
 }
 
 func NewKafkaProducer() *kafka.Producer{
@@ -51,4 +42,22 @@ func PublishMessage(msg string, topic string, producer *kafka.Producer, key []by
 		return err
 	}
 	return nil
+}
+
+func DeliveryReport(deliveryChan chan kafka.Event) {
+	for event := range deliveryChan {
+		switch e := event.(type) {
+		case *kafka.Message:
+			if e.TopicPartition.Error != nil {
+				log.Printf("Failed to deliver message: %v\n", e.TopicPartition.Error)
+			} else {
+				log.Printf("Message delivered to %s [%d] at offset %d\n",
+					*e.TopicPartition.Topic,
+					e.TopicPartition.Partition,
+					e.TopicPartition.Offset)
+			}
+		default:
+			log.Printf("Ignored event: %v\n", e)
+		}
+	}
 }
